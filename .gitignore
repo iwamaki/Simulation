@@ -16,6 +16,9 @@ input_tmp.in
 # LAMMPS出力（万が一data/外に生成された場合）
 *.lammpstrj
 
+# ポテンシャルファイル（EAM系、サイズが大きいため除外）
+potentials/
+
 # OVITO状態ファイル
 *.ovito
 

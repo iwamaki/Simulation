@@ -1,1 +1,0 @@
-/home/iwash/lammps/potentials/tmd.sw.mod

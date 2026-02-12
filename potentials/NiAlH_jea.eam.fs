@@ -1,1 +1,0 @@
-/home/iwash/lammps/potentials/NiAlH_jea.eam.fs
