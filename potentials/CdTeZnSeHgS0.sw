@@ -1,0 +1,1 @@
+/home/iwash/lammps/potentials/CdTeZnSeHgS0.sw

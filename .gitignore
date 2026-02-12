@@ -1,0 +1,27 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# シミュレーション出力データ（重いため除外）
+**/data/
+
+# バックアップファイル
+backup/
+*.backup*
+
+# 一時ファイル
+input_tmp.in
+
+# LAMMPS出力（万が一data/外に生成された場合）
+*.lammpstrj
+
+# OVITO状態ファイル
+*.ovito
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db

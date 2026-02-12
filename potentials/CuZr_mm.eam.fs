@@ -1,0 +1,1 @@
+/home/iwash/lammps/potentials/CuZr_mm.eam.fs

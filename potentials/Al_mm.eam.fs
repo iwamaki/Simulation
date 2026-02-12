@@ -1,0 +1,1 @@
+/home/iwash/lammps/potentials/Al_mm.eam.fs

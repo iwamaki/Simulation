@@ -1,0 +1,1 @@
+/home/iwash/lammps/potentials/VFe_mm.eam.fs

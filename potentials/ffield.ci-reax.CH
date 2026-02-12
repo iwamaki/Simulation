@@ -1,0 +1,1 @@
+/home/iwash/lammps/potentials/ffield.ci-reax.CH
