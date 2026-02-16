@@ -76,6 +76,8 @@ class SimConfig:
     # --- 実行 ---
     np: int = 1
     gpu: bool = False
+    runpod: bool = False
+    keep_pod: bool = False
     label: str = ""
 
     def signed_erate(self):
@@ -96,7 +98,8 @@ class SimConfig:
             return f"{base}_{self.label}"
         defaults = SimConfig()
         skip = {'element', 'miller', 'load_mode', 'temp',
-                'label', 'np', 'potential', 'pair_style', 'halt_enabled'}
+                'label', 'np', 'potential', 'pair_style', 'halt_enabled',
+                'gpu', 'runpod', 'keep_pod'}
         short = {
             'lattice': 'a', 'target_size': 'L', 'dt': 'dt',
             'eq_time': 'eqt', 'erate': 'erate', 'max_strain': 'maxe',
@@ -291,24 +294,38 @@ def run_simulation(cfg: SimConfig):
 
     # === 実行 ===
     print(f"\nOutput -> {job_dir}")
-    print("Running LAMMPS...")
 
-    lammps = os.environ.get("ASE_LAMMPSRUN_COMMAND",
-                            "/home/iwash/lammps/build/lmp")
-    if cfg.np > 1:
-        run_cmd = f"mpirun -np {cfg.np} {lammps} -in in.deform > log.lammps"
+    if cfg.runpod:
+        # RunPodでリモート実行
+        from scripts.runpod_runner import run_on_runpod
+        print("Running LAMMPS on RunPod...")
+        run_on_runpod(
+            job_dir=job_dir,
+            input_file="in.deform",
+            pot_path=pot_path,
+            np=cfg.np,
+            gpu=cfg.gpu,
+            keep_pod=cfg.keep_pod,
+        )
     else:
-        run_cmd = f"{lammps} < in.deform > log.lammps"
-    print(f"  {run_cmd}")
+        # ローカル実行
+        print("Running LAMMPS...")
+        lammps = os.environ.get("ASE_LAMMPSRUN_COMMAND",
+                                "/home/iwash/lammps/build/lmp")
+        if cfg.np > 1:
+            run_cmd = f"mpirun -np {cfg.np} {lammps} -in in.deform > log.lammps"
+        else:
+            run_cmd = f"{lammps} < in.deform > log.lammps"
+        print(f"  {run_cmd}")
 
-    result = subprocess.run(run_cmd, shell=True, cwd=job_dir)
-    if result.returncode == 0:
-        print("Done.")
-    else:
-        print(f"FAILED (rc={result.returncode})")
-        log_path = os.path.join(job_dir, "log.lammps")
-        if os.path.exists(log_path):
-            subprocess.run(["tail", "-n", "20", log_path])
+        result = subprocess.run(run_cmd, shell=True, cwd=job_dir)
+        if result.returncode == 0:
+            print("Done.")
+        else:
+            print(f"FAILED (rc={result.returncode})")
+            log_path = os.path.join(job_dir, "log.lammps")
+            if os.path.exists(log_path):
+                subprocess.run(["tail", "-n", "20", log_path])
 
 
 if __name__ == "__main__":
@@ -364,6 +381,11 @@ if __name__ == "__main__":
 
     exe = parser.add_argument_group("実行")
     exe.add_argument("--np", type=int, default=1, help="MPI並列数")
+    exe.add_argument("--gpu", action='store_true', help="GPU使用（RunPod時）")
+    exe.add_argument("--runpod", action='store_true',
+                     help="RunPodでリモート実行（RUNPOD_API_KEY環境変数が必要）")
+    exe.add_argument("--keep-pod", action='store_true',
+                     help="RunPod実行後にPodを停止しない（連続実行時のコスト削減）")
     exe.add_argument("--label", default="", help="フォルダ名サフィックス")
 
     args = parser.parse_args()
@@ -376,6 +398,8 @@ if __name__ == "__main__":
         halt_enabled=not args.no_halt,
         halt_strain=args.halt_strain, halt_stress=args.halt_stress,
         thermo_freq=args.thermo_freq, dump_freq=args.dump_freq,
-        np=args.np, label=args.label,
+        np=args.np, gpu=args.gpu,
+        runpod=args.runpod, keep_pod=args.keep_pod,
+        label=args.label,
     )
     run_simulation(cfg)

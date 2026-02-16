@@ -54,6 +54,10 @@ class SimConfig:
 
     # --- 実行 ---
     np: int = 1                    # MPI並列数
+    gpu: bool = False              # GPU使用フラグ（RunPod時）
+    runpod: bool = False           # RunPodでリモート実行
+    runpod_id: str = None          # 既存のRunPod IDを使用
+    keep_pod: bool = False         # RunPod実行後にPodを維持
 
     # --- フォルダ名 ---
     label: str = ""                # 明示的なサフィックス（空なら自動生成）
@@ -83,7 +87,7 @@ class SimConfig:
         # 自動検出: デフォルトと異なるパラメータをサフィックスに追加
         defaults = SimConfig()
         skip = {'element1', 'element2', 'miller1', 'miller2', 'temp',
-                'label', 'np', 'potential'}
+                'label', 'np', 'potential', 'gpu', 'runpod', 'keep_pod'}
         short = {
             'lattice1': 'a1', 'lattice2': 'a2',
             'target_xy': 'xy', 'target_z': 'z',
@@ -392,23 +396,48 @@ def run_simulation(cfg: SimConfig):
             f.write(cmd + "\n")
 
     print(f"\nInput files → {job_dir}")
-    print("Running LAMMPS...")
 
-    lammps_cmd = os.environ.get("ASE_LAMMPSRUN_COMMAND", "/home/iwash/lammps/build/lmp")
-    if cfg.np > 1:
-        cmd = f"mpirun -np {cfg.np} {lammps_cmd} -in in.tensile > log.lammps"
-    else:
-        cmd = f"{lammps_cmd} < in.tensile > log.lammps"
-    print(f"  {cmd}")
+    if cfg.runpod:
+        # RunPodでリモート実行
+        from scripts.runpod_runner import run_on_runpod
+        print("Running LAMMPS on RunPod...")
+        try:
+            # ポテンシャルファイルのパス解決
+            # cfg.potential は "potentials/AlCu.eam.alloy" のような相対パスまたは絶対パス
+            pot_path = os.path.abspath(cfg.potential)
+            if not os.path.exists(pot_path):
+                 print(f"Warning: Potential file not found at {pot_path}")
 
-    result = subprocess.run(cmd, shell=True, cwd=job_dir)
-    if result.returncode == 0:
-        print("Simulation finished successfully.")
+            run_on_runpod(
+                job_dir=job_dir,
+                input_file="in.tensile",
+                pot_path=pot_path,
+                np=cfg.np,
+                gpu=cfg.gpu,
+                keep_pod=cfg.keep_pod,
+                pod_id=cfg.runpod_id,
+            )
+        except ImportError:
+            print("Error: scripts.runpod_runner module not found.")
+        
     else:
-        print(f"Simulation failed with return code {result.returncode}")
-        log_path = os.path.join(job_dir, "log.lammps")
-        if os.path.exists(log_path):
-            subprocess.run(["tail", "-n", "20", log_path])
+        # ローカル実行
+        print("Running LAMMPS...")
+        lammps_cmd = os.environ.get("ASE_LAMMPSRUN_COMMAND", "/home/iwash/lammps/build/lmp")
+        if cfg.np > 1:
+            cmd = f"mpirun -np {cfg.np} {lammps_cmd} -in in.tensile > log.lammps"
+        else:
+            cmd = f"{lammps_cmd} < in.tensile > log.lammps"
+        print(f"  {cmd}")
+
+        result = subprocess.run(cmd, shell=True, cwd=job_dir)
+        if result.returncode == 0:
+            print("Simulation finished successfully.")
+        else:
+            print(f"Simulation failed with return code {result.returncode}")
+            log_path = os.path.join(job_dir, "log.lammps")
+            if os.path.exists(log_path):
+                subprocess.run(["tail", "-n", "20", log_path])
 
 
 if __name__ == "__main__":
@@ -471,6 +500,14 @@ if __name__ == "__main__":
     exe = parser.add_argument_group("実行")
     exe.add_argument("--np", type=int, default=1,
                      help="MPI並列数 (default: 1)")
+    exe.add_argument("--gpu", action='store_true',
+                     help="GPU使用（RunPod時）")
+    exe.add_argument("--runpod", action='store_true',
+                     help="RunPodでリモート実行（RUNPOD_API_KEY環境変数が必要）")
+    exe.add_argument("--runpod-id", type=str, default=None,
+                     help="既存のRunPod IDを使用（起動待ち時間短縮）")
+    exe.add_argument("--keep-pod", action='store_true',
+                     help="RunPod実行後にPodを停止しない（連続実行時のコスト削減）")
     exe.add_argument("--label", type=str, default="",
                      help="出力フォルダ名のサフィックス（未指定時は変更パラメータから自動生成）")
 
@@ -496,6 +533,10 @@ if __name__ == "__main__":
         thermo_freq=args.thermo_freq,
         dump_freq=args.dump_freq,
         np=args.np,
+        gpu=args.gpu,
+        runpod=args.runpod,
+        runpod_id=args.runpod_id,
+        keep_pod=args.keep_pod,
         label=args.label,
     )
     run_simulation(cfg)

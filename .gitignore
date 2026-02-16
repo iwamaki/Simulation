@@ -25,6 +25,9 @@ potentials/
 # Claude Code
 .claude/
 
+# 環境変数・シークレット
+.env
+
 # OS
 .DS_Store
 Thumbs.db

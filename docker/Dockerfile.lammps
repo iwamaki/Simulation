@@ -1,0 +1,62 @@
+# LAMMPS Dockerイメージ (RunPod用)
+#
+# ビルド:
+#   docker build -t ghcr.io/iwamaki/lammps:latest -f docker/Dockerfile.lammps docker/
+#
+# 含まれるパッケージ:
+#   MANYBODY (EAM等), MEAM, MOLECULE, KSPACE, RIGID, MISC, EXTRA-COMPUTE
+#
+# RunPodでの使用:
+#   RUNPOD_IMAGE=ghcr.io/iwamaki/lammps:latest
+
+FROM nvidia/cuda:12.2.0-devel-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 基本パッケージ + OpenMPI + SSHサーバー
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    openmpi-bin \
+    libopenmpi-dev \
+    openssh-server \
+    && rm -rf /var/lib/apt/lists/*
+
+# SSHサーバー基本設定
+RUN mkdir -p /var/run/sshd \
+    && echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+
+# LAMMPSソースビルド
+RUN git clone --depth 1 https://github.com/lammps/lammps.git /opt/lammps
+
+WORKDIR /opt/lammps/build
+
+RUN cmake ../cmake \
+    -D CMAKE_INSTALL_PREFIX=/usr/local \
+    -D BUILD_MPI=on \
+    -D BUILD_OMP=on \
+    -D PKG_KOKKOS=on \
+    -D Kokkos_ARCH_AMPERE86=on \
+    -D Kokkos_ENABLE_CUDA=on \
+    -D Kokkos_ENABLE_OPENMP=on \
+    -D PKG_MANYBODY=on \
+    -D PKG_MEAM=on \
+    -D PKG_MOLECULE=on \
+    -D PKG_KSPACE=on \
+    -D PKG_RIGID=on \
+    -D PKG_MISC=on \
+    -D PKG_EXTRA-COMPUTE=on \
+    && make -j$(nproc) \
+    && make install
+
+# ビルドディレクトリを削除してイメージサイズ削減
+RUN rm -rf /opt/lammps
+
+WORKDIR /workspace
+
+# スタートアップスクリプト（RunPod SSH鍵設定 + sshd起動）
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+CMD ["/start.sh"]
