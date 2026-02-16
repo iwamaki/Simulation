@@ -391,11 +391,11 @@ def run_on_runpod(job_dir, input_file, pot_path, np=1, gpu=False, keep_pod=False
             # 5. LAMMPS実行
             print("\n--- LAMMPS実行 ---")
             
-            # GPUオプションの構築
+            # GPUオプションの構築（GPU packageバックエンド）
             gpu_opts = ""
             if gpu:
-                # -sf gpu: GPUサフィックスを有効化
-                # -pk gpu 1: GPUパッケージを有効化（1 GPU）
+                # -sf gpu: GPUサフィックスを有効化（対応スタイルをGPU実行）
+                # -pk gpu 1: GPU 1基を使用
                 gpu_opts = "-sf gpu -pk gpu 1"
 
             if np > 1:

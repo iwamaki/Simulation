@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **LAMMPS**: `/home/iwash/lammps/build/lmp` (ソースビルド版)
 - **Quantum ESPRESSO**: `/home/iwash/qe/build/bin/` (v7.4, ソースビルド版)
 - **Platform**: WSL2 (Ubuntu 24.04) on Windows
+- **RunPod**: クラウドGPUによるリモート実行環境（後述）
 
 ### Setup & Run
 
@@ -48,6 +49,26 @@ simulations/
 - **ASE (`ase`)**: 結晶構造構築、各種計算コードへの入出力
 - **NumPy/SciPy**: 数値計算・データ処理
 - **Matplotlib**: グラフ作成
+
+## RunPod（クラウドGPU実行）
+
+大規模計算はRunPod上のGPUインスタンスでリモート実行できる。ドライバスクリプトに `--runpod --gpu` を付けるだけで、Pod作成→ファイル転送→GPU実行→結果ダウンロード→Pod停止が自動で行われる。
+
+```bash
+# ローカル実行（CPU）
+python simulations/<テーマ>/<driver>.py
+
+# RunPod GPU実行
+python simulations/<テーマ>/<driver>.py --runpod --gpu
+```
+
+- **Dockerイメージ**: `ghcr.io/iwamaki/lammps:latest`（`docker/Dockerfile.lammps`）
+  - LAMMPS + GPU package (CUDA) でビルド
+  - 対応GPU: A100 (SM80), RTX 3070/3090/A4000 (SM86), RTX 4090/L40 (SM89), H100 (SM90)
+  - イメージ再ビルドなしでGPU種別を切り替え可能
+- **実行基盤**: `scripts/runpod_runner.py`（SSH経由でジョブ投入・結果回収）
+- **環境変数**: `RUNPOD_API_KEY`（必須）、`RUNPOD_GPU_TYPE`、`RUNPOD_IMAGE`（`.env`で管理）
+- **オプション**: `--keep-pod`（連続実行時にPodを維持してコスト削減）
 
 ## Conventions
 

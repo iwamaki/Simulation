@@ -4,7 +4,10 @@
 #   docker build -t ghcr.io/iwamaki/lammps:latest -f docker/Dockerfile.lammps docker/
 #
 # 含まれるパッケージ:
-#   MANYBODY (EAM等), MEAM, MOLECULE, KSPACE, RIGID, MISC, EXTRA-COMPUTE
+#   GPU, MANYBODY (EAM等), MEAM, MOLECULE, KSPACE, RIGID, MISC, EXTRA-COMPUTE
+#
+# 対応GPU (GPU packageによるマルチアーキテクチャ):
+#   A100 (SM80), RTX 3070/3090/A4000 (SM86), RTX 4090/L40 (SM89), H100 (SM90)
 #
 # RunPodでの使用:
 #   RUNPOD_IMAGE=ghcr.io/iwamaki/lammps:latest
@@ -34,12 +37,11 @@ WORKDIR /opt/lammps/build
 
 RUN cmake ../cmake \
     -D CMAKE_INSTALL_PREFIX=/usr/local \
+    -D CMAKE_CUDA_ARCHITECTURES="80;86;89;90" \
     -D BUILD_MPI=on \
     -D BUILD_OMP=on \
-    -D PKG_KOKKOS=on \
-    -D Kokkos_ARCH_AMPERE86=on \
-    -D Kokkos_ENABLE_CUDA=on \
-    -D Kokkos_ENABLE_OPENMP=on \
+    -D PKG_GPU=on \
+    -D GPU_API=cuda \
     -D PKG_MANYBODY=on \
     -D PKG_MEAM=on \
     -D PKG_MOLECULE=on \
