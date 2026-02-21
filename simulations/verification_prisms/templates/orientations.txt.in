@@ -1,0 +1,4 @@
+# PRISMS-Plasticity 結晶方位ファイル (Rodrigues-Frank ベクトル)
+# Format: grain_id r1 r2 r3
+# 単結晶: grain 1のみ
+1 $R1 $R2 $R3
