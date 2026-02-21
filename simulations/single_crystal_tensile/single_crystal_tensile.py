@@ -13,6 +13,10 @@ fix deform (z軸) + fix npt (x,y側面ゼロ圧) で変形試験を行う。
   python simulations/single_crystal_tensile/single_crystal_tensile.py \
       --miller 1 1 1 --mode compression --no-halt
 
+  # 応力ドロップ2GPaで自動停止（移動平均との差で判定）
+  python simulations/single_crystal_tensile/single_crystal_tensile.py \
+      --halt-drop 2.0 --halt-drop-window 5
+
   # Al (110) 引張
   python simulations/single_crystal_tensile/single_crystal_tensile.py \
       --element Al --lattice 4.05 --miller 1 1 0 \
@@ -69,9 +73,13 @@ class SimConfig:
     halt_strain: float = 0.05       # halt判定開始ひずみ
     halt_stress: float = 0.1        # halt判定応力閾値 (GPa)
 
+    # --- 応力ドロップ検知 ---
+    halt_drop: float = 0.0          # 応力ドロップ閾値 (GPa)。0で無効。
+    halt_drop_window: int = 5       # 移動平均のウィンドウ数
+
     # --- 出力 ---
-    thermo_freq: int = 100
-    dump_freq: int = 500
+    thermo_freq: int = 500
+    dump_freq: int = 5000
 
     # --- 実行 ---
     np: int = 1
@@ -104,6 +112,7 @@ class SimConfig:
             'lattice': 'a', 'target_size': 'L', 'dt': 'dt',
             'eq_time': 'eqt', 'erate': 'erate', 'max_strain': 'maxe',
             'halt_strain': 'hse', 'halt_stress': 'hss',
+            'halt_drop': 'hdrop', 'halt_drop_window': 'hdw',
             'thermo_freq': 'tf', 'dump_freq': 'df',
         }
         extras = []
@@ -267,7 +276,7 @@ def run_simulation(cfg: SimConfig):
         "",
     ]
 
-    # 破断検知
+    # 破断検知（応力絶対値ベース）
     if cfg.halt_enabled:
         if cfg.load_mode == 'tension':
             cond = (f'"(v_strain > {cfg.halt_strain}) * '
@@ -279,6 +288,36 @@ def run_simulation(cfg: SimConfig):
             f"variable should_halt equal {cond}",
             f"fix halt_fix all halt {cfg.thermo_freq} v_should_halt > 0.5"
             " error soft",
+            "",
+        ])
+
+    # 応力ドロップ検知（移動平均との乖離ベース）
+    if cfg.halt_drop > 0:
+        # 移動平均を計算（直近 halt_drop_window 回分）
+        cmds.extend([
+            f"# 応力ドロップ検知: 移動平均(window={cfg.halt_drop_window})"
+            f"との差が {cfg.halt_drop} GPa を超えたら停止",
+            f"fix stress_avg all ave/time {cfg.thermo_freq} 1"
+            f" {cfg.thermo_freq} v_stress ave window {cfg.halt_drop_window}",
+        ])
+        # 引張: ドロップ=応力が下がる → avg - current > 0
+        # 圧縮: ドロップ=応力の絶対値が下がる(0に近づく) → current - avg > 0
+        if cfg.load_mode == 'tension':
+            cmds.append("variable stress_drop equal f_stress_avg-v_stress")
+        else:
+            cmds.append("variable stress_drop equal v_stress-f_stress_avg")
+
+        # halt_strainを超えてから判定（初期の揺らぎを無視）
+        if cfg.load_mode == 'tension':
+            drop_cond = (f'"(v_strain > {cfg.halt_strain}) * '
+                         f'(v_stress_drop > {cfg.halt_drop})"')
+        else:
+            drop_cond = (f'"(v_strain < -{cfg.halt_strain}) * '
+                         f'(v_stress_drop > {cfg.halt_drop})"')
+        cmds.extend([
+            f"variable should_halt_drop equal {drop_cond}",
+            f"fix halt_drop_fix all halt {cfg.thermo_freq}"
+            " v_should_halt_drop > 0.5 error soft",
             "",
         ])
 
@@ -371,9 +410,16 @@ if __name__ == "__main__":
 
     halt_grp = parser.add_argument_group("破断検知")
     halt_grp.add_argument("--no-halt", action='store_true',
-                          help="破断検知を無効化")
-    halt_grp.add_argument("--halt-strain", type=float, default=0.05)
-    halt_grp.add_argument("--halt-stress", type=float, default=0.1)
+                          help="破断検知（応力絶対値ベース）を無効化")
+    halt_grp.add_argument("--halt-strain", type=float, default=0.05,
+                          help="halt判定開始ひずみ (default: 0.05)")
+    halt_grp.add_argument("--halt-stress", type=float, default=0.1,
+                          help="halt判定応力閾値 [GPa] (default: 0.1)")
+    halt_grp.add_argument("--halt-drop", type=float, default=0.0,
+                          help="応力ドロップ検知閾値 [GPa]。移動平均との差がこの値を"
+                          "超えたら停止。0で無効 (default: 0)")
+    halt_grp.add_argument("--halt-drop-window", type=int, default=5,
+                          help="応力ドロップ検知の移動平均ウィンドウ数 (default: 5)")
 
     out = parser.add_argument_group("出力")
     out.add_argument("--thermo-freq", type=int, default=100)
@@ -397,6 +443,7 @@ if __name__ == "__main__":
         temp=args.temp, erate=args.erate, max_strain=args.max_strain,
         halt_enabled=not args.no_halt,
         halt_strain=args.halt_strain, halt_stress=args.halt_stress,
+        halt_drop=args.halt_drop, halt_drop_window=args.halt_drop_window,
         thermo_freq=args.thermo_freq, dump_freq=args.dump_freq,
         np=args.np, gpu=args.gpu,
         runpod=args.runpod, keep_pod=args.keep_pod,
