@@ -4,7 +4,7 @@
 #   docker build -t ghcr.io/iwamaki/lammps:latest -f docker/Dockerfile.lammps docker/
 #
 # 含まれるパッケージ:
-#   GPU, MANYBODY (EAM等), MEAM, MOLECULE, KSPACE, RIGID, MISC, EXTRA-COMPUTE
+#   GPU, MANYBODY (EAM等), MEAM, MOLECULE, KSPACE, RIGID, MISC, EXTRA-COMPUTE, PYTHON
 #
 # 対応GPU (GPU packageによるマルチアーキテクチャ):
 #   A100 (SM80), RTX 3070/3090/A4000 (SM86), RTX 4090/L40 (SM89), H100 (SM90)
@@ -24,6 +24,7 @@ RUN apt-get update && apt-get install -y \
     openmpi-bin \
     libopenmpi-dev \
     openssh-server \
+    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # SSHサーバー基本設定
@@ -49,6 +50,7 @@ RUN cmake ../cmake \
     -D PKG_RIGID=on \
     -D PKG_MISC=on \
     -D PKG_EXTRA-COMPUTE=on \
+    -D PKG_PYTHON=on \
     && make -j$(nproc) \
     && make install
 

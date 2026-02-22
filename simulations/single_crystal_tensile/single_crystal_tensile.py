@@ -75,7 +75,7 @@ class SimConfig:
 
     # --- 応力ドロップ検知 ---
     halt_drop: float = 0.0          # 応力ドロップ閾値 (GPa)。0で無効。
-    halt_drop_window: int = 5       # 移動平均のウィンドウ数
+    halt_drop_window: int = 10      # 移動平均のウィンドウ数
 
     # --- 出力 ---
     thermo_freq: int = 500
@@ -87,6 +87,8 @@ class SimConfig:
     runpod: bool = False
     keep_pod: bool = False
     label: str = ""
+    triclinic: bool = False          # 全方位でtriclinicを強制
+    lammps_has_python: bool = False  # LAMMPSのPYTHONパッケージ有無（自動検出）
 
     def signed_erate(self):
         return self.erate if self.load_mode == 'tension' else -self.erate
@@ -107,7 +109,7 @@ class SimConfig:
         defaults = SimConfig()
         skip = {'element', 'miller', 'load_mode', 'temp',
                 'label', 'np', 'potential', 'pair_style', 'halt_enabled',
-                'gpu', 'runpod', 'keep_pod'}
+                'gpu', 'runpod', 'keep_pod', 'lammps_has_python'}
         short = {
             'lattice': 'a', 'target_size': 'L', 'dt': 'dt',
             'eq_time': 'eqt', 'erate': 'erate', 'max_strain': 'maxe',
@@ -130,6 +132,23 @@ class SimConfig:
         if extras:
             return base + "_" + "_".join(extras)
         return base
+
+
+def detect_lammps_python():
+    """LAMMPSがPYTHONパッケージ付きでビルドされているか検出"""
+    lammps = os.environ.get("ASE_LAMMPSRUN_COMMAND",
+                            "/home/iwash/lammps/build/lmp")
+    try:
+        result = subprocess.run(
+            f"{lammps} -h", shell=True, capture_output=True, text=True, timeout=10)
+        output = result.stdout + result.stderr
+        # "Installed packages:" の後のパッケージ一覧にPYTHONがあるか
+        for line in output.split('\n'):
+            if 'PYTHON' in line.upper().split():
+                return True
+    except Exception:
+        pass
+    return False
 
 
 def build_crystal(element, a, miller, target_size):
@@ -171,6 +190,14 @@ def run_simulation(cfg: SimConfig):
     Phase 2: NPT平衡化（目標温度・ゼロ圧力）
     Phase 3: z軸変形試験（fix deform z + fix npt x,y）
     """
+    # PYTHONパッケージ自動検出（halt_drop使用時のみ）
+    if cfg.halt_drop > 0 and not cfg.lammps_has_python:
+        cfg.lammps_has_python = detect_lammps_python()
+        if cfg.lammps_has_python:
+            print("  LAMMPS PYTHONパッケージ検出 → ピーク追跡法を有効化")
+        else:
+            print("  LAMMPS PYTHONパッケージ未検出 → 移動平均法のみで検知")
+
     project_root = os.getcwd()
     sim_dir = os.path.join(project_root, "simulations", "single_crystal_tensile")
 
@@ -198,8 +225,8 @@ def run_simulation(cfg: SimConfig):
     eq_steps = int(cfg.eq_time / cfg.dt)
     deform_steps = int(cfg.max_strain / cfg.erate / cfg.dt)
 
-    # (110)/(111)方位ではせん断変形を許容するため三斜晶系を使用
-    needs_triclinic = cfg.miller != (1, 0, 0)
+    # せん断変形を許容するため三斜晶系を使用（--triclinicで全方位に適用可能）
+    needs_triclinic = cfg.triclinic or cfg.miller != (1, 0, 0)
     eq_coupling = "tri" if needs_triclinic else "aniso"
     npt_lateral = ("x 0.0 0.0 1.0 y 0.0 0.0 1.0"
                    " xy 0.0 0.0 1.0 xz 0.0 0.0 1.0 yz 0.0 0.0 1.0"
@@ -291,35 +318,82 @@ def run_simulation(cfg: SimConfig):
             "",
         ])
 
-    # 応力ドロップ検知（移動平均との乖離ベース）
+    # 応力ドロップ検知（2段構え: 移動平均法 + ピーク追跡法）
     if cfg.halt_drop > 0:
-        # 移動平均を計算（直近 halt_drop_window 回分）
+        # --- 方法1: 移動平均との乖離 ---
+        # 移動平均は直近window回分、現在値は生のv_stressを使用
+        # （旧実装はwindow=2の平滑化で鋭いドロップを見逃していた）
         cmds.extend([
-            f"# 応力ドロップ検知: 移動平均(window={cfg.halt_drop_window})"
-            f"との差が {cfg.halt_drop} GPa を超えたら停止",
+            f"# 応力ドロップ検知（方法1: 移動平均法）",
+            f"# 移動平均(window={cfg.halt_drop_window})と現在値の差が"
+            f" {cfg.halt_drop} GPa を超えたら停止",
             f"fix stress_avg all ave/time {cfg.thermo_freq} 1"
             f" {cfg.thermo_freq} v_stress ave window {cfg.halt_drop_window}",
         ])
-        # 引張: ドロップ=応力が下がる → avg - current > 0
-        # 圧縮: ドロップ=応力の絶対値が下がる(0に近づく) → current - avg > 0
         if cfg.load_mode == 'tension':
             cmds.append("variable stress_drop equal f_stress_avg-v_stress")
         else:
             cmds.append("variable stress_drop equal v_stress-f_stress_avg")
 
-        # halt_strainを超えてから判定（初期の揺らぎを無視）
         if cfg.load_mode == 'tension':
             drop_cond = (f'"(v_strain > {cfg.halt_strain}) * '
                          f'(v_stress_drop > {cfg.halt_drop})"')
         else:
             drop_cond = (f'"(v_strain < -{cfg.halt_strain}) * '
                          f'(v_stress_drop > {cfg.halt_drop})"')
+
         cmds.extend([
             f"variable should_halt_drop equal {drop_cond}",
             f"fix halt_drop_fix all halt {cfg.thermo_freq}"
             " v_should_halt_drop > 0.5 error soft",
             "",
         ])
+
+        # --- 方法2: ピーク応力からの落差（PYTHONパッケージが必要） ---
+        # Python関数で応力の最大値を記憶し、そこからの落差で判定
+        # 緩やかなドロップや段階的な低下も確実に検出できる
+        # PYTHONパッケージ未インストール時はスキップ（方法1のみで動作）
+        has_python = cfg.lammps_has_python
+        thermo_extras = "v_stress_drop"
+        if has_python:
+            peak_op = 'max' if cfg.load_mode == 'tension' else 'min'
+            cmds.extend([
+                f"# 応力ドロップ検知（方法2: ピーク追跡法）",
+                f"# ピーク応力からの落差が {cfg.halt_drop} GPa を超えたら停止",
+                'python peak_tracker input 1 v_stress return v_peak_stress format ff here """',
+                'def peak_tracker(stress):',
+                '    if not hasattr(peak_tracker, "peak"):',
+                '        peak_tracker.peak = 0.0',
+                f'    peak_tracker.peak = {peak_op}(peak_tracker.peak, stress)',
+                '    return peak_tracker.peak',
+                '"""',
+                # python コマンドは関数定義のみ。変数は別途定義が必要
+                "variable peak_stress python peak_tracker",
+                "",
+            ])
+            if cfg.load_mode == 'tension':
+                cmds.append("variable drop_from_peak equal v_peak_stress-v_stress")
+                peak_cond = (f'"(v_strain > {cfg.halt_strain}) * '
+                             f'(v_drop_from_peak > {cfg.halt_drop})"')
+            else:
+                cmds.append("variable drop_from_peak equal v_stress-v_peak_stress")
+                peak_cond = (f'"(v_strain < -{cfg.halt_strain}) * '
+                             f'(v_drop_from_peak > {cfg.halt_drop})"')
+
+            cmds.extend([
+                f"variable should_halt_peak equal {peak_cond}",
+                f"fix halt_peak_fix all halt {cfg.thermo_freq}"
+                " v_should_halt_peak > 0.5 error soft",
+                "",
+            ])
+            thermo_extras += " v_drop_from_peak"
+
+        # ログにドロップ量を表示（デバッグ・確認用）
+        cmds.append(
+            "thermo_style custom step temp v_strain v_stress"
+            f" {thermo_extras} pxx pyy pzz lx ly lz"
+        )
+        cmds.append("")
 
     cmds.append(f"run {deform_steps}")
 
@@ -418,8 +492,8 @@ if __name__ == "__main__":
     halt_grp.add_argument("--halt-drop", type=float, default=0.0,
                           help="応力ドロップ検知閾値 [GPa]。移動平均との差がこの値を"
                           "超えたら停止。0で無効 (default: 0)")
-    halt_grp.add_argument("--halt-drop-window", type=int, default=5,
-                          help="応力ドロップ検知の移動平均ウィンドウ数 (default: 5)")
+    halt_grp.add_argument("--halt-drop-window", type=int, default=10,
+                          help="応力ドロップ検知の移動平均ウィンドウ数 (default: 10)")
 
     out = parser.add_argument_group("出力")
     out.add_argument("--thermo-freq", type=int, default=100)
@@ -432,6 +506,8 @@ if __name__ == "__main__":
                      help="RunPodでリモート実行（RUNPOD_API_KEY環境変数が必要）")
     exe.add_argument("--keep-pod", action='store_true',
                      help="RunPod実行後にPodを停止しない（連続実行時のコスト削減）")
+    exe.add_argument("--triclinic", action='store_true',
+                     help="全方位でtriclinicボックスを使用（せん断応力を許容）")
     exe.add_argument("--label", default="", help="フォルダ名サフィックス")
 
     args = parser.parse_args()
@@ -447,6 +523,6 @@ if __name__ == "__main__":
         thermo_freq=args.thermo_freq, dump_freq=args.dump_freq,
         np=args.np, gpu=args.gpu,
         runpod=args.runpod, keep_pod=args.keep_pod,
-        label=args.label,
+        triclinic=args.triclinic, label=args.label,
     )
     run_simulation(cfg)
