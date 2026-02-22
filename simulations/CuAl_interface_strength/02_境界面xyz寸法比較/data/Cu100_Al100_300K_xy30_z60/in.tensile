@@ -1,0 +1,111 @@
+units metal
+boundary p p s
+atom_style atomic
+timestep 0.002
+read_data data.interface
+
+pair_style eam/alloy
+pair_coeff * * /mnt/c/Users/iwash/Documents/Repositories/Lammps/potentials/AlCu.eam.alloy Al Cu
+
+neighbor 2.0 bin
+neigh_modify delay 10 check yes
+
+thermo 100
+thermo_style custom step temp pe press pxx pyy lx ly lz
+
+print '=== Phase 0: Shake (High-T limit) ==='
+velocity all create 1000.0 2170 dist gaussian
+fix shake all nve/limit 0.1
+run 1000
+unfix shake
+velocity all set 0 0 0
+
+# x,y方向の箱寸法 + 原子位置を同時最適化（z方向はshrink-wrap）
+print '=== Phase 1: 0K Relaxation ==='
+fix relax all box/relax x 0.0 y 0.0 vmax 0.001
+minimize 1.0e-8 1.0e-10 10000 100000
+unfix relax
+
+# 界面近傍の原子配置を緩和（ミスフィット軽減）
+print '=== Phase 2: Annealing at 600.0K for 10.0ps ==='
+reset_timestep 0
+velocity all create 600.0 2170 dist gaussian
+fix ann all npt temp 600.0 600.0 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0
+run 5000
+unfix ann
+
+print '=== Phase 2b: Cooling 600.0K -> 300.0K ==='
+fix cool all npt temp 600.0 300.0 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0
+run 5000
+unfix cool
+
+# 焼きなまし後の座標を基準にグリップ領域を定義
+print '=== Phase 3: Define Grips ==='
+variable zmin equal bound(all,zmin)
+variable zmax equal bound(all,zmax)
+variable grip_thick equal 5.0
+variable zlo_grip equal ${zmin}+${grip_thick}
+variable zhi_grip equal ${zmax}-${grip_thick}
+
+region rgn_bot block INF INF INF INF INF ${zlo_grip}
+region rgn_top block INF INF INF INF ${zhi_grip} INF
+group bottom region rgn_bot
+group top region rgn_top
+group mobile subtract all bottom top
+
+print 'Bottom grip: $(count(bottom)) atoms'
+print 'Top grip:    $(count(top)) atoms'
+print 'Mobile:      $(count(mobile)) atoms'
+
+print '=== Phase 4: Equilibration with Grips ==='
+reset_timestep 0
+velocity bottom set 0.0 0.0 0.0
+velocity top set 0.0 0.0 0.0
+# グリップ: nve（時間積分）+ setforce 0（力ゼロ）→ 等速運動
+fix nve_bot bottom nve
+fix nve_top top nve
+fix freeze_bot bottom setforce 0.0 0.0 0.0
+fix freeze_top top setforce 0.0 0.0 0.0
+fix eq mobile npt temp 300.0 300.0 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0
+run 5000
+unfix eq
+
+print '=== Phase 5: Tensile Test ==='
+reset_timestep 0
+
+# グリップ重心間距離で初期材料長を定義
+variable zcm_bot equal xcm(bottom,z)
+variable zcm_top equal xcm(top,z)
+variable tmp_L equal v_zcm_top-v_zcm_bot
+variable L0 equal ${tmp_L}
+print 'Initial grip distance L0 = ${L0} Ang'
+
+# 引っ張り速度 = erate × L0
+variable vpull equal 0.002*v_L0
+velocity top set 0.0 0.0 ${vpull}
+print 'Pull velocity = ${vpull} Ang/ps (erate=0.002/ps)'
+
+# 可動原子: NVTで温度制御のみ (NPTはグリップ固定と競合するため不可)
+fix pull mobile nvt temp 300.0 300.0 0.1
+
+# ひずみ: グリップ重心の相対変位から計算
+variable strain equal (xcm(top,z)-xcm(bottom,z)-v_L0)/v_L0
+
+# 応力: 原子応力の総和 / 材料体積 (bar·Å³ / ų → bar → GPa)
+compute peratom all stress/atom NULL
+compute szz_sum all reduce sum c_peratom[3]
+variable Lmat equal xcm(top,z)-xcm(bottom,z)
+variable stress_zz equal c_szz_sum/(lx*ly*v_Lmat)/10000
+
+# 出力設定
+thermo 100
+thermo_style custom step temp v_strain v_stress_zz pxx pyy lx ly v_Lmat
+
+fix out1 all print 100 "${strain} ${stress_zz}" file stress_strain.txt screen no
+dump 1 all custom 100 dump.lammpstrj id type x y z c_peratom[1] c_peratom[2] c_peratom[3] c_peratom[4] c_peratom[5] c_peratom[6]
+
+# 破断検知: halt_strain以降、応力がhalt_stress未満になったら停止
+variable should_halt equal "(v_strain > 0.03) * (v_stress_zz < 0.1)"
+fix halt_frac all halt 100 v_should_halt > 0.5 error soft
+
+run 75000

@@ -4,7 +4,7 @@ __pycache__/
 *.pyc
 
 # シミュレーション出力データ（重いため除外）
-**/data/
+dump.lammpstrj
 
 # バックアップファイル
 backup/

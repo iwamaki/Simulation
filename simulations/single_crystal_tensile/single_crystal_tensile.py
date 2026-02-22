@@ -501,7 +501,7 @@ if __name__ == "__main__":
     out.add_argument("--dump-freq", type=int, default=500)
 
     exe = parser.add_argument_group("実行")
-    exe.add_argument("--np", type=int, default=1, help="MPI並列数")
+    exe.add_argument("--np", type=int, default=4, help="MPI並列数")
     exe.add_argument("--gpu", action='store_true', help="GPU使用（RunPod時）")
     exe.add_argument("--runpod", action='store_true',
                      help="RunPodでリモート実行（RUNPOD_API_KEY環境変数が必要）")
