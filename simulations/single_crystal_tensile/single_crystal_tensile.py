@@ -27,7 +27,7 @@ import os
 import sys
 import argparse
 import subprocess
-import hashlib
+import time
 from dataclasses import dataclass, fields
 from ase.build import bulk, cut
 from ase.io import write
@@ -202,7 +202,7 @@ def run_simulation(cfg: SimConfig):
     sim_dir = os.path.join(project_root, "simulations", "single_crystal_tensile")
 
     job_name = cfg.job_name()
-    seed = int(hashlib.md5(job_name.encode()).hexdigest(), 16) % 100000 + 1
+    seed = int(time.time() * 1000) % 100000 + 1
     job_dir = os.path.join(sim_dir, job_name)
     os.makedirs(job_dir, exist_ok=True)
 
@@ -218,6 +218,7 @@ def run_simulation(cfg: SimConfig):
     print(f"  Supercell: ({nx} x {ny} x {nz})")
     print(f"  Box: {cell[0,0]:.1f} x {cell[1,1]:.1f} x {cell[2,2]:.1f} Ang")
     print(f"  Total: {len(crystal)} atoms")
+    print(f"  Velocity seed: {seed}")
 
     # === LAMMPS入力生成 ===
     pot_path = os.path.abspath(os.path.join(project_root, cfg.potential))
