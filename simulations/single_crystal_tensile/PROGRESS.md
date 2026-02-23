@@ -47,7 +47,7 @@ python simulations/single_crystal_tensile/single_crystal_tensile.py --target-siz
 ## 設計メモ
 - 結晶構築: `ase.build.bulk(cubic=True)` + `ase.build.cut()` で完全周期結晶
   - slab builder (fcc100等) はz方向の周期性が壊れるため使用不可
-- **三斜晶系対応**: (110)/(111) では `change_box all triclinic` + tilt 解放で、すべり系活動に伴うせん断変形を許容。(100) は高対称性のため直方体で十分
+- **三斜晶系対応**:  `change_box all triclinic` + tilt 解放で、すべり系活動に伴うせん断変形を許容。
 - CNA cutoff = 0.854 × 格子定数（1NNと2NNの中間）
   - 大ひずみ域ではカットオフが初期値固定のため誤分類の可能性あり。高精度解析には OVITO の Adaptive CNA を推奨
 - 平衡化5ps: 完全結晶は熱化が速い。欠陥入り構造には `--eq-time` で延長可
@@ -58,7 +58,4 @@ python simulations/single_crystal_tensile/single_crystal_tensile.py --target-siz
 - **システムサイズ**: デフォルト 40 Å は動作テスト用。転位核生成・すべりの観察には 100 Å 以上が必要（周期像相互作用の回避）
 - **stress/atom**: LAMMPS出力は bar*Å³（応力×体積）。実応力への変換にはボロノイ体積割りが必要
 
-## テスト結果 (2026-02-12)
-小モデル（20 Å, 10%ひずみ）で動作検証:
-- **Cu(100)**: 864原子, ~7.9 GPa@10% — 完全結晶のため降伏なし（正常）
-- **Cu(111)**: 576原子, triclinic, ~11.6 GPa@10% — E₁₁₁ > E₁₀₀ の弾性異方性を正しく再現
+
