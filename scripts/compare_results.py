@@ -77,13 +77,13 @@ def main():
         if len(data) > 0:
             # Calculate Max Stress
             max_stress_idx = np.argmax(data[:, 1])
-            max_stress = data[max_stress_idx, 1]
-            max_strain = data[max_stress_idx, 0]
+            res_max_stress = data[max_stress_idx, 1]
+            res_max_strain = data[max_stress_idx, 0]
             results.append({
                 'label': label,
                 'data': data,
-                'max_stress': max_stress,
-                'max_strain': max_strain,
+                'max_stress': res_max_stress,
+                'max_strain': res_max_strain,
                 'path': data_file
             })
         else:
@@ -123,6 +123,8 @@ def main():
 
     plt.xlabel("Strain (%)")
     plt.ylabel("Stress (GPa)")
+    if args.max_strain is not None:
+        plt.xlim(left=0, right=args.max_strain * 100)
     if args.min_y is not None or args.max_y is not None:
         plt.ylim(bottom=args.min_y, top=args.max_y)
     if args.title:
