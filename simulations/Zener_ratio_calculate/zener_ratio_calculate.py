@@ -6,7 +6,7 @@
 応力-ひずみ曲線の弾性域の傾きと比較し、疑問1の仮説を検証する。
 
 使い方:
-  python simulations/single_crystal_tensile/verify_elastic.py
+  python simulations\Zener_ratio_calculate\zener_ratio_calculate.py
 """
 
 import os
@@ -50,9 +50,10 @@ def make_lammps_input(element, mat, strain_type, strain_sign):
     if strain_type == 'xx':
         deform_cmd = f"change_box all x scale {1.0 + delta} remap"
     elif strain_type == 'xy':
-        # 工学せん断ひずみ γ = tilt / Ly = (delta * Ly) / Ly = delta
+        # change_box xy delta は lattice 単位で解釈される（内部で × a_lattice）
+        # → delta を渡せば実tilt = delta * a, γ = delta * a / Ly ≈ delta
         deform_cmd = (f"change_box all triclinic\n"
-                      f"change_box all xy delta {delta * a} remap")
+                      f"change_box all xy delta {delta} remap")
 
     script = f"""# 弾性定数計算: {element} {strain_type} {'+'if strain_sign>0 else '-'}δ
 units metal
