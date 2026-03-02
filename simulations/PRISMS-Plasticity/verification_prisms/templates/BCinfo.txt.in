@@ -1,0 +1,15 @@
+# PRISMS-Plasticity 境界条件ファイル
+# z軸単軸引張: Face5(z=0)固定, Face6(z=L)に変位
+#
+# Format: Number_of_BCs
+# Face Component Type Value
+# Face: 1=x0, 2=x1, 3=y0, 4=y1, 5=z0, 6=z1
+# Component: 1=x, 2=y, 3=z
+# Type: 1=Displacement (値は全ステップでの累積変位)
+# Value: 変位量 or 応力値
+
+4
+1 1 1 0.0
+3 2 1 0.0
+5 3 1 0.0
+6 3 1 $DISP_Z

@@ -1,0 +1,48 @@
+# PRISMS-Plasticity パラメータファイル
+# 自動生成: run_verification.py
+
+# メッシュ
+set Mesh filename = grainID.txt
+set Voxels in X direction = 8
+set Voxels in Y direction = 8
+set Voxels in Z direction = 8
+set Grain ID file name = grainID.txt
+set Number of grains = 1
+set Grain orientations file name = orientations.txt
+
+# 弾性定数 (MPa, 立方晶)
+set Crystal structure = FCC
+set C11 = 168400.0
+set C12 = 121400.0
+set C44 = 75400.0
+
+# すべり系
+set Number of slip systems = 12
+set Slip normals file name = slipNormals.txt
+set Slip directions file name = slipDirections.txt
+
+# 構成則: Phenomenological Power Law (Voce硬化)
+set Stress tolerance for the crystal plasticity algorithm = 1.0e-3
+set Maximum iterations for the crystal plasticity algorithm = 200
+set Maximum no. of active slip search iterations = 1
+
+# 硬化パラメータ（各すべり系ごとに指定、カンマ区切り12値）
+set Initial slip resistance (tau_0) = 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27, 3134.27
+set Saturation slip resistance (tau_s) = 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40, 4701.40
+set Initial hardening modulus (h_0) = 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67, 31342.67
+set Power law exponent (n) = 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0
+set Latent hardening ratio = 1.4
+
+# 境界条件
+set Boundary condition filename = BCinfo.txt
+
+# 時間積分
+set Time increments = 3.000000e-01
+set Total time = 3.000000e+02
+
+# 出力
+set Output directory = output
+set Skip output steps = 10
+set Output equivalent strain = true
+set Output equivalent stress = true
+set Output grain averaged stress = true

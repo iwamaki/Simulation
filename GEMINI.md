@@ -11,6 +11,7 @@ This file provides guidance to Gemini when working with code in this repository.
 - **Python**: 3.12 (`.venv/` に仮想環境)
 - **LAMMPS**: `/home/iwash/lammps/build/lmp` (ソースビルド版)
 - **Quantum ESPRESSO**: `/home/iwash/qe/build/bin/` (v7.4, ソースビルド版)
+- **DAMASK**: 3.0.2 (PPA版: `ppa:damask-multiphysics/ppa`)
 - **Platform**: WSL2 (Ubuntu 24.04) on Windows
 - **RunPod**: クラウドGPUによるリモート実行環境（後述）
 

@@ -1,0 +1,84 @@
+units metal
+boundary p p p
+atom_style atomic
+timestep 0.002
+read_data data.crystal
+change_box all triclinic
+
+pair_style eam
+pair_coeff 1 1 /mnt/c/Users/iwash/Documents/Repositories/Simulation/potentials/Au_u3.eam
+
+neighbor 2.0 bin
+neigh_modify delay 10 check yes
+
+thermo 100
+thermo_style custom step temp pe press pxx pyy pzz lx ly lz
+
+print '=== Phase 1: 0K Relaxation ==='
+fix relax all box/relax aniso 0.0 vmax 0.001
+minimize 1.0e-8 1.0e-10 10000 100000
+unfix relax
+
+print '=== Phase 2: Equilibration at 300.0K ==='
+reset_timestep 0
+velocity all create 300.0 15756 dist gaussian
+fix eq all npt temp 300.0 300.0 0.1 tri 0.0 0.0 1.0
+run 2500
+unfix eq
+
+print '=== Phase 3: Tension ==='
+reset_timestep 0
+
+# 初期z寸法の記録
+variable tmp equal lz
+variable lz0 equal ${tmp}
+variable tmp delete
+
+# z軸変形 + x,yゼロ圧力（Poisson収縮を許容）
+fix deform_fix all deform 1 z erate 0.0005 remap x
+fix npt_fix all npt temp 300.0 300.0 0.1 x 0.0 0.0 1.0 y 0.0 0.0 1.0 xy 0.0 0.0 1.0 xz 0.0 0.0 1.0 yz 0.0 0.0 1.0
+
+# ひずみ・応力（sigma = -P [GPa]）
+variable strain equal (lz-v_lz0)/v_lz0
+variable stress equal -pzz/10000
+
+# 欠陥解析用compute
+# stress/atom: 単位は bar*Å³（実応力はボロノイ体積で割る必要あり）
+compute peratom all stress/atom NULL
+compute cna all cna/atom 3.483
+compute csym all centro/atom fcc
+
+thermo 100
+thermo_style custom step temp v_strain v_stress pxx pyy pzz lx ly lz
+
+fix out1 all print 100 "${strain} ${stress}" file stress_strain.txt screen no
+dump 1 all custom 500 dump.lammpstrj id type x y z c_cna c_csym c_peratom[1] c_peratom[2] c_peratom[3] c_peratom[4] c_peratom[5] c_peratom[6]
+
+variable should_halt equal "(v_strain > 0.05) * (v_stress < 0.1)"
+fix halt_fix all halt 100 v_should_halt > 0.5 error soft
+
+# 応力ドロップ検知（方法1: 移動平均法）
+# 移動平均(window=10)と現在値の差が 2.0 GPa を超えたら停止
+fix stress_avg all ave/time 100 1 100 v_stress ave window 10
+variable stress_drop equal f_stress_avg-v_stress
+variable should_halt_drop equal "(v_strain > 0.05) * (v_stress_drop > 2.0)"
+fix halt_drop_fix all halt 100 v_should_halt_drop > 0.5 error soft
+
+# 応力ドロップ検知（方法2: ピーク追跡法）
+# ピーク応力からの落差が 2.0 GPa を超えたら停止
+python peak_tracker input 1 v_stress return v_peak_stress format ff here """
+def peak_tracker(stress):
+    if not hasattr(peak_tracker, "peak"):
+        peak_tracker.peak = 0.0
+    peak_tracker.peak = max(peak_tracker.peak, stress)
+    return peak_tracker.peak
+"""
+variable peak_stress python peak_tracker
+
+variable drop_from_peak equal v_peak_stress-v_stress
+variable should_halt_peak equal "(v_strain > 0.05) * (v_drop_from_peak > 2.0)"
+fix halt_peak_fix all halt 100 v_should_halt_peak > 0.5 error soft
+
+thermo_style custom step temp v_strain v_stress v_stress_drop v_drop_from_peak pxx pyy pzz lx ly lz
+
+run 300000

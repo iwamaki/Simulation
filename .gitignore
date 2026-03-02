@@ -16,6 +16,9 @@ input_tmp.in
 # LAMMPS出力（万が一data/外に生成された場合）
 *.lammpstrj
 
+# DAMASK出力
+vtk/
+
 # ポテンシャルファイル（EAM系、サイズが大きいため除外）
 potentials/
 
@@ -27,6 +30,9 @@ potentials/
 
 # 環境変数・シークレット
 .env
+
+# 文献情報
+reference/
 
 # OS
 .DS_Store

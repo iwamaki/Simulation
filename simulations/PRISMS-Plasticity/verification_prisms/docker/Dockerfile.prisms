@@ -1,0 +1,38 @@
+# PRISMS-Plasticity Docker実行環境
+#
+# ベース: deal.II v9.5.1 公式イメージ（Ubuntu Jammy + deal.II ビルド済み）
+# PRISMS-Plasticityをソースからビルド
+#
+# ビルド:
+#   docker build -t prisms-plasticity:latest -f simulations/verification_prisms/docker/Dockerfile.prisms .
+#
+# 実行:
+#   docker run --rm -v $(pwd)/output:/workspace -w /workspace prisms-plasticity:latest \
+#     mpirun --allow-run-as-root -np 4 /opt/prisms/main prm.prm
+
+FROM dealii/dealii:v9.5.1-jammy
+
+USER root
+
+# ビルドに必要なパッケージ
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    cmake \
+    make \
+    && rm -rf /var/lib/apt/lists/*
+
+# PRISMS-Plasticity をクローン・ビルド
+RUN mkdir -p /opt/prisms
+WORKDIR /opt
+RUN git clone https://github.com/prisms-center/plasticity.git prisms-src && \
+    cd prisms-src && \
+    mkdir build && cd build && \
+    cmake .. \
+      -DCMAKE_BUILD_TYPE=Release \
+      -DDEAL_II_DIR=/usr/local \
+      -DCMAKE_INSTALL_PREFIX=/opt/prisms && \
+    make -j$(nproc) && \
+    cp main /opt/prisms/main
+ENV PATH="/opt/prisms:${PATH}"
+
+WORKDIR /workspace
